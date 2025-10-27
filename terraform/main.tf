@@ -1,5 +1,5 @@
 provider "aws" {
-  region = "eu-east-1"
+  region = "us-west-2"
 }
 
 # ========================
@@ -56,8 +56,8 @@ resource "aws_lambda_function" "lambida_functions" {
   runtime       = "nodejs18.x"
   handler       = "${each.value}.handler"
   role          = aws_iam_role.lambda_exec.arn
-  filename      = "functions/${each.value}.zip"
-  source_code_hash = filebase64sha256("functions/${each.value}.zip")
+  filename      = "${path.module}/../functions/${each.value}.zip"
+  source_code_hash = filebase64sha256("${path.module}/../functions/${each.value}.zip")
 
   environment {
     variables = {
@@ -67,7 +67,7 @@ resource "aws_lambda_function" "lambida_functions" {
 }
 
 # ========================
-# API Gateway REST
+# API Gateway REST (apenas estrutura)
 # ========================
 resource "aws_api_gateway_rest_api" "lambida_api" {
   name        = "LambidaAPI"
@@ -81,110 +81,9 @@ resource "aws_api_gateway_resource" "tasks_resource" {
   path_part   = "tasks"
 }
 
-# Métodos GET e POST em /tasks
-resource "aws_api_gateway_method" "tasks_get" {
-  rest_api_id   = aws_api_gateway_rest_api.lambida_api.id
-  resource_id   = aws_api_gateway_resource.tasks_resource.id
-  http_method   = "GET"
-  authorization = "NONE"
-}
-
-resource "aws_api_gateway_method" "tasks_post" {
-  rest_api_id   = aws_api_gateway_rest_api.lambida_api.id
-  resource_id   = aws_api_gateway_resource.tasks_resource.id
-  http_method   = "POST"
-  authorization = "NONE"
-}
-
 # Resource /tasks/{id}
 resource "aws_api_gateway_resource" "task_id_resource" {
   rest_api_id = aws_api_gateway_rest_api.lambida_api.id
   parent_id   = aws_api_gateway_resource.tasks_resource.id
   path_part   = "{id}"
-}
-
-# Métodos PUT e DELETE em /tasks/{id}
-resource "aws_api_gateway_method" "task_put" {
-  rest_api_id   = aws_api_gateway_rest_api.lambida_api.id
-  resource_id   = aws_api_gateway_resource.task_id_resource.id
-  http_method   = "PUT"
-  authorization = "NONE"
-}
-
-resource "aws_api_gateway_method" "task_delete" {
-  rest_api_id   = aws_api_gateway_rest_api.lambida_api.id
-  resource_id   = aws_api_gateway_resource.task_id_resource.id
-  http_method   = "DELETE"
-  authorization = "NONE"
-}
-
-# ========================
-# Integrações Lambda
-# ========================
-resource "aws_api_gateway_integration" "get_tasks_integration" {
-  rest_api_id = aws_api_gateway_rest_api.lambida_api.id
-  resource_id = aws_api_gateway_resource.tasks_resource.id
-  http_method = aws_api_gateway_method.tasks_get.http_method
-  integration_http_method = "POST"
-  type = "AWS_PROXY"
-  uri  = aws_lambda_function.lambida_functions["getTasks"].invoke_arn
-}
-
-resource "aws_api_gateway_integration" "create_tasks_integration" {
-  rest_api_id = aws_api_gateway_rest_api.lambida_api.id
-  resource_id = aws_api_gateway_resource.tasks_resource.id
-  http_method = aws_api_gateway_method.tasks_post.http_method
-  integration_http_method = "POST"
-  type = "AWS_PROXY"
-  uri  = aws_lambda_function.lambida_functions["createTask"].invoke_arn
-}
-
-resource "aws_api_gateway_integration" "update_task_integration" {
-  rest_api_id = aws_api_gateway_rest_api.lambida_api.id
-  resource_id = aws_api_gateway_resource.task_id_resource.id
-  http_method = aws_api_gateway_method.task_put.http_method
-  integration_http_method = "POST"
-  type = "AWS_PROXY"
-  uri  = aws_lambda_function.lambida_functions["updateTask"].invoke_arn
-}
-
-resource "aws_api_gateway_integration" "delete_task_integration" {
-  rest_api_id = aws_api_gateway_rest_api.lambida_api.id
-  resource_id = aws_api_gateway_resource.task_id_resource.id
-  http_method = aws_api_gateway_method.task_delete.http_method
-  integration_http_method = "POST"
-  type = "AWS_PROXY"
-  uri  = aws_lambda_function.lambida_functions["deleteTask"].invoke_arn
-}
-
-# ========================
-# Permissões Lambda para API Gateway
-# ========================
-resource "aws_lambda_permission" "api_invoke" {
-  for_each = toset(local.functions)
-  statement_id  = "AllowAPIGatewayInvoke-${each.value}"
-  action        = "lambda:InvokeFunction"
-  function_name = aws_lambda_function.lambida_functions[each.value].function_name
-  principal     = "apigateway.amazonaws.com"
-}
-
-# ========================
-# Deploy da API Gateway
-# ========================
-resource "aws_api_gateway_deployment" "lambida_deployment" {
-  depends_on = [
-    aws_api_gateway_integration.get_tasks_integration,
-    aws_api_gateway_integration.create_tasks_integration,
-    aws_api_gateway_integration.update_task_integration,
-    aws_api_gateway_integration.delete_task_integration
-  ]
-
-  rest_api_id = aws_api_gateway_rest_api.lambida_api.id
-}
-
-# Stage prod separado
-resource "aws_api_gateway_stage" "prod" {
-  stage_name    = "prod"
-  rest_api_id   = aws_api_gateway_rest_api.lambida_api.id
-  deployment_id = aws_api_gateway_deployment.lambida_deployment.id
 }

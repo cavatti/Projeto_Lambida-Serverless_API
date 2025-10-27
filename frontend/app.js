@@ -1,95 +1,179 @@
-// URL base da API (substitua pelo endpoint real do API Gateway)
-const API_URL = "https://SEU_ENDPOINT.execute-api.eu-east-1.amazonaws.com/prod/tasks";
+// app.js — usa o CSS que você mandou (task-card, task-info, task-actions, etc)
+const API_BASE = "https://s7t9osqh58.execute-api.us-west-2.amazonaws.com/prod";
+const API_TASKS = `${API_BASE}/tasks`;
 
-// Selecionando elementos do DOM
-const taskForm = document.getElementById("taskForm");
-const titleInput = document.getElementById("title");
-const descriptionInput = document.getElementById("description");
+const form = document.getElementById("taskForm");
 const formMessage = document.getElementById("formMessage");
 const tasksContainer = document.getElementById("tasksContainer");
 
-// Função para listar todas as tasks
+// Util helpers
+function showMessage(el, msg, isError = false) {
+  el.textContent = msg;
+  el.style.color = isError ? "#c0392b" : "#2d862d";
+  setTimeout(() => { el.textContent = ""; }, 4000);
+}
+
 async function fetchTasks() {
-  tasksContainer.innerHTML = "Carregando...";
+  tasksContainer.innerHTML = "<p>Carregando...</p>";
   try {
-    const res = await fetch(API_URL);
-    const data = await res.json();
+    const res = await fetch(API_TASKS, { method: "GET" });
+    if (!res.ok) throw new Error(`GET failed: ${res.status}`);
+    const tasks = await res.json();
 
-    tasksContainer.innerHTML = "";
-
-    if (!data || data.length === 0) {
-      tasksContainer.innerHTML = "<p>Nenhuma task encontrada.</p>";
+    if (!Array.isArray(tasks)) {
+      // Algumas implementações retornam { body: "..." } — detecta e tenta parsear
+      try {
+        const parsed = typeof tasks === "string" ? JSON.parse(tasks) : tasks;
+        if (Array.isArray(parsed)) {
+          renderTasks(parsed);
+          return;
+        }
+      } catch (e) { /* ignore */ }
+      tasksContainer.innerHTML = "<p>Resposta inesperada do servidor.</p>";
       return;
     }
 
-    data.forEach(task => {
-      const taskCard = document.createElement("div");
-      taskCard.className = "task-card";
-
-      taskCard.innerHTML = `
-        <div class="task-info">
-          <div class="task-title">${task.title}</div>
-          <div class="task-description">${task.description}</div>
-        </div>
-        <div class="task-actions">
-          <button onclick="deleteTask('${task.id}')">Remover</button>
-        </div>
-      `;
-
-      tasksContainer.appendChild(taskCard);
-    });
-  } catch (error) {
-    tasksContainer.innerHTML = "<p>Erro ao carregar tasks.</p>";
-    console.error(error);
+    renderTasks(tasks);
+  } catch (err) {
+    console.error(err);
+    tasksContainer.innerHTML = `<p>Erro ao carregar tasks: ${err.message}</p>`;
   }
 }
 
-// Função para criar nova task
-taskForm.addEventListener("submit", async (e) => {
-  e.preventDefault();
+function renderTasks(tasks) {
+  if (!tasks || tasks.length === 0) {
+    tasksContainer.innerHTML = "<p>Nenhuma task encontrada.</p>";
+    return;
+  }
 
-  const newTask = {
-    title: titleInput.value,
-    description: descriptionInput.value
-  };
+  tasksContainer.innerHTML = "";
+  tasks.forEach(task => {
+    const card = document.createElement("div");
+    card.className = "task-card";
+
+    const info = document.createElement("div");
+    info.className = "task-info";
+
+    const titleEl = document.createElement("div");
+    titleEl.className = "task-title";
+    titleEl.textContent = task.title || "(sem título)";
+
+    const descEl = document.createElement("div");
+    descEl.className = "task-description";
+    descEl.textContent = task.description || "";
+
+    info.appendChild(titleEl);
+    info.appendChild(descEl);
+
+    const actions = document.createElement("div");
+    actions.className = "task-actions";
+
+    const btnEdit = document.createElement("button");
+    btnEdit.type = "button";
+    btnEdit.textContent = "✏️";
+    btnEdit.title = "Atualizar";
+    btnEdit.style.backgroundColor = "#f0ad4e";
+    btnEdit.style.marginRight = "8px";
+    btnEdit.addEventListener("click", () => onEditTask(task));
+
+    const btnDelete = document.createElement("button");
+    btnDelete.type = "button";
+    btnDelete.textContent = "🗑️";
+    btnDelete.title = "Excluir";
+    btnDelete.style.backgroundColor = "#e74c3c";
+    btnDelete.addEventListener("click", () => onDeleteTask(task.id));
+
+    actions.appendChild(btnEdit);
+    actions.appendChild(btnDelete);
+
+    card.appendChild(info);
+    card.appendChild(actions);
+
+    tasksContainer.appendChild(card);
+  });
+}
+
+// Create
+form.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const title = document.getElementById("title").value.trim();
+  const description = document.getElementById("description").value.trim();
+
+  if (!title || !description) {
+    showMessage(formMessage, "Preencha título e descrição.", true);
+    return;
+  }
+
+  form.querySelector("button[type=submit]").disabled = true;
+  showMessage(formMessage, "Criando...");
 
   try {
-    const res = await fetch(API_URL, {
+    const res = await fetch(API_TASKS, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(newTask)
+      body: JSON.stringify({ title, description })
     });
-
-    const data = await res.json();
-
-    formMessage.textContent = "Task criada com sucesso!";
-    formMessage.style.color = "green";
-
-    // Limpar formulário
-    titleInput.value = "";
-    descriptionInput.value = "";
-
-    // Atualizar lista
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`${res.status} ${text}`);
+    }
+    // tenta parsear a resposta (pode ser texto)
+    const data = await res.json().catch(() => null);
+    showMessage(formMessage, "Task criada com sucesso!");
+    form.reset();
     fetchTasks();
-  } catch (error) {
-    formMessage.textContent = "Erro ao criar task.";
-    formMessage.style.color = "red";
-    console.error(error);
+  } catch (err) {
+    console.error("POST error:", err);
+    showMessage(formMessage, "Erro ao criar task.", true);
+  } finally {
+    form.querySelector("button[type=submit]").disabled = false;
   }
 });
 
-// Função para deletar task
-async function deleteTask(id) {
-  if (!confirm("Deseja realmente remover esta task?")) return;
+// Edit handler (usa prompts simples)
+async function onEditTask(task) {
+  const novoTitulo = prompt("Novo título:", task.title || "");
+  if (novoTitulo === null) return; // cancelou
+  const novaDesc = prompt("Nova descrição:", task.description || "");
+  if (novaDesc === null) return;
 
   try {
-    await fetch(`${API_URL}/${id}`, { method: "DELETE" });
+    const res = await fetch(`${API_TASKS}/${encodeURIComponent(task.id)}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title: novoTitulo, description: novaDesc })
+    });
+    if (!res.ok) {
+      const txt = await res.text();
+      throw new Error(`${res.status} ${txt}`);
+    }
+    showMessage(formMessage, "Task atualizada!");
     fetchTasks();
-  } catch (error) {
-    alert("Erro ao remover task.");
-    console.error(error);
+  } catch (err) {
+    console.error("PUT error:", err);
+    showMessage(formMessage, "Erro ao atualizar task.", true);
   }
 }
 
-// Inicializar lista de tasks
-fetchTasks();
+// Delete handler
+async function onDeleteTask(id) {
+  if (!confirm("Confirma exclusão desta task?")) return;
+
+  try {
+    const res = await fetch(`${API_TASKS}/${encodeURIComponent(id)}`, {
+      method: "DELETE"
+    });
+    if (!res.ok) {
+      const txt = await res.text();
+      throw new Error(`${res.status} ${txt}`);
+    }
+    showMessage(formMessage, "Task excluída!");
+    fetchTasks();
+  } catch (err) {
+    console.error("DELETE error:", err);
+    showMessage(formMessage, "Erro ao excluir task.", true);
+  }
+}
+
+// Inicializa
+window.addEventListener("load", fetchTasks);

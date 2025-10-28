@@ -1,4 +1,4 @@
-// app.js — usa o CSS que você mandou (task-card, task-info, task-actions, etc)
+// app.js — versão corrigida (sem enviar Access-Control-Allow-Origin nos requests)
 const API_BASE = "https://s7t9osqh58.execute-api.us-west-2.amazonaws.com/prod";
 const API_TASKS = `${API_BASE}/tasks`;
 
@@ -16,20 +16,38 @@ function showMessage(el, msg, isError = false) {
 async function fetchTasks() {
   tasksContainer.innerHTML = "<p>Carregando...</p>";
   try {
-    const res = await fetch(API_TASKS, { method: "GET" });
+    const res = await fetch(API_TASKS, {
+      method: "GET",
+      mode: "cors",
+      headers: {
+        "Accept": "application/json"
+      }
+    });
     if (!res.ok) throw new Error(`GET failed: ${res.status}`);
-    const tasks = await res.json();
+
+    // Alguns setups do API Gateway retornam { body: "JSON-string" } ou texto —
+    // tentamos interpretar robustamente:
+    const text = await res.text();
+    let tasks;
+    try {
+      tasks = JSON.parse(text);
+      // se o retorno tiver body -> extrair
+      if (tasks && typeof tasks === "object" && tasks.body) {
+        try {
+          tasks = JSON.parse(tasks.body);
+        } catch (e) {
+          // body já pode ser array/objeto
+          if (Array.isArray(tasks.body)) tasks = tasks.body;
+        }
+      }
+    } catch (e) {
+      // não era JSON — tentar como array direto
+      tasks = text;
+    }
 
     if (!Array.isArray(tasks)) {
-      // Algumas implementações retornam { body: "..." } — detecta e tenta parsear
-      try {
-        const parsed = typeof tasks === "string" ? JSON.parse(tasks) : tasks;
-        if (Array.isArray(parsed)) {
-          renderTasks(parsed);
-          return;
-        }
-      } catch (e) { /* ignore */ }
       tasksContainer.innerHTML = "<p>Resposta inesperada do servidor.</p>";
+      console.warn("Resposta GET inesperada:", tasks);
       return;
     }
 
@@ -110,15 +128,17 @@ form.addEventListener("submit", async (e) => {
   try {
     const res = await fetch(API_TASKS, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      mode: "cors",
+      headers: {
+        "Content-Type": "application/json",
+        "Accept": "application/json"
+      },
       body: JSON.stringify({ title, description })
     });
     if (!res.ok) {
       const text = await res.text();
       throw new Error(`${res.status} ${text}`);
     }
-    // tenta parsear a resposta (pode ser texto)
-    const data = await res.json().catch(() => null);
     showMessage(formMessage, "Task criada com sucesso!");
     form.reset();
     fetchTasks();
@@ -140,7 +160,11 @@ async function onEditTask(task) {
   try {
     const res = await fetch(`${API_TASKS}/${encodeURIComponent(task.id)}`, {
       method: "PUT",
-      headers: { "Content-Type": "application/json" },
+      mode: "cors",
+      headers: {
+        "Content-Type": "application/json",
+        "Accept": "application/json"
+      },
       body: JSON.stringify({ title: novoTitulo, description: novaDesc })
     });
     if (!res.ok) {
@@ -161,7 +185,11 @@ async function onDeleteTask(id) {
 
   try {
     const res = await fetch(`${API_TASKS}/${encodeURIComponent(id)}`, {
-      method: "DELETE"
+      method: "DELETE",
+      mode: "cors",
+      headers: {
+        "Accept": "application/json"
+      }
     });
     if (!res.ok) {
       const txt = await res.text();

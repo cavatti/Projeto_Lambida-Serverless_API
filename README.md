@@ -186,7 +186,6 @@ Access-Control-Allow-Headers: Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-
 ## 👨‍💻 Autor
 
 **Marcelo — AWS Cloud & Serverless Developer**  
-📍 Baseado na Itália 🇮🇹  
 💼 Projeto criado para estudos e portfólio AWS  
 
 ---
